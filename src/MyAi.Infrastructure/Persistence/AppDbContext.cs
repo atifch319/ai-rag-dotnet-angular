@@ -1,18 +1,17 @@
 using Microsoft.EntityFrameworkCore;
 using MyAi.Application.Abstractions.Persistence;
+using MyAi.Domain.Entities;
 
 namespace MyAi.Infrastructure.Persistence;
 
-/// <summary>
-/// Database-first DbContext. Scaffold entities from PostgreSQL into
-/// Persistence/Entities and regenerate this context when the schema changes.
-/// </summary>
 public class AppDbContext : DbContext, IApplicationDbContext
 {
     public AppDbContext(DbContextOptions<AppDbContext> options)
         : base(options)
     {
     }
+
+    public DbSet<Document> Documents => Set<Document>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

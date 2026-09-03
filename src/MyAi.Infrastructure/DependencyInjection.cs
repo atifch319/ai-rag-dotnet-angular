@@ -2,9 +2,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using MyAi.Application.Abstractions.Persistence;
+using MyAi.Application.Abstractions.Storage;
 using MyAi.Domain.Interfaces;
 using MyAi.Infrastructure.Persistence;
 using MyAi.Infrastructure.Persistence.Repositories;
+using MyAi.Infrastructure.Storage;
 
 namespace MyAi.Infrastructure;
 
@@ -21,6 +23,7 @@ public static class DependencyInjection
         services.AddScoped<IApplicationDbContext>(provider => provider.GetRequiredService<AppDbContext>());
         services.AddScoped<IUnitOfWork, UnitOfWork>();
         services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
+        services.AddScoped<IDocumentStorageService, LocalDocumentStorageService>();
 
         return services;
     }
