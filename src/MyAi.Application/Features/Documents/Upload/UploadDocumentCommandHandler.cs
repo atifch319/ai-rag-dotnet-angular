@@ -34,7 +34,7 @@ public sealed class UploadDocumentCommandHandler
             FileSize = file.Length,
             FilePath = storedPath,
             UploadedAt = DateTimeOffset.UtcNow,
-            Status = "Uploaded"
+            Status = DocumentStatus.Uploaded
         };
 
         _dbContext.Documents.Add(document);

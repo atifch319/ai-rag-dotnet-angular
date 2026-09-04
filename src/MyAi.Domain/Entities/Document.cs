@@ -15,4 +15,6 @@ public class Document
     public DateTimeOffset UploadedAt { get; set; }
 
     public string Status { get; set; } = string.Empty;
+
+    public string? ExtractedText { get; set; }
 }

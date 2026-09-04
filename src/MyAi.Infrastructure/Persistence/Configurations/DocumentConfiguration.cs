@@ -36,5 +36,8 @@ public sealed class DocumentConfiguration : IEntityTypeConfiguration<Document>
         builder.Property(d => d.Status)
             .IsRequired()
             .HasMaxLength(50);
+
+        builder.Property(d => d.ExtractedText)
+            .HasColumnType("text");
     }
 }
