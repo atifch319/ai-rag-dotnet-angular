@@ -10,5 +10,7 @@ public class DocumentChunk
 
     public string Content { get; set; } = string.Empty;
 
+    public float[]? Embedding { get; set; }
+
     public Document Document { get; set; } = null!;
 }

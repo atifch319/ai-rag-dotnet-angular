@@ -25,6 +25,7 @@ artifacts/
 ## Secrets
 appsettings.*.local.json
 *.pfx
+.env
 
 ## OS
 Thumbs.db

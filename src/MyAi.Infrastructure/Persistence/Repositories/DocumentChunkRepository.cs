@@ -33,4 +33,14 @@ public sealed class DocumentChunkRepository : IDocumentChunkRepository
             await _dbContext.DocumentChunks.AddRangeAsync(chunks, cancellationToken);
         }
     }
+
+    public async Task<IReadOnlyList<DocumentChunk>> GetByDocumentIdAsync(
+        long documentId,
+        CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.DocumentChunks
+            .Where(chunk => chunk.DocumentId == documentId)
+            .OrderBy(chunk => chunk.ChunkIndex)
+            .ToListAsync(cancellationToken);
+    }
 }

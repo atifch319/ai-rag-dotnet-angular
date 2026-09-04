@@ -22,6 +22,9 @@ public sealed class DocumentChunkConfiguration : IEntityTypeConfiguration<Docume
             .IsRequired()
             .HasColumnType("text");
 
+        builder.Property(chunk => chunk.Embedding)
+            .HasColumnType("real[]");
+
         builder.HasIndex(chunk => new { chunk.DocumentId, chunk.ChunkIndex })
             .IsUnique();
 

@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
 using MyAi.Application.Features.Documents.ExtractText;
+using MyAi.Application.Features.Documents.GenerateEmbeddings;
 using MyAi.Application.Features.Documents.Upload;
 
 namespace MyAi.Api.Controllers;
@@ -42,6 +43,21 @@ public sealed class DocumentsController : ControllerBase
         CancellationToken cancellationToken)
     {
         var response = await _sender.Send(new ExtractDocumentTextCommand(id), cancellationToken);
+        return Ok(response);
+    }
+
+    /// <summary>
+    /// Generate embeddings for a document's chunks.
+    /// </summary>
+    [HttpPost("{id:long}/generate-embeddings")]
+    [ProducesResponseType(typeof(GenerateDocumentEmbeddingsResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<GenerateDocumentEmbeddingsResponse>> GenerateEmbeddings(
+        long id,
+        CancellationToken cancellationToken)
+    {
+        var response = await _sender.Send(new GenerateDocumentEmbeddingsCommand(id), cancellationToken);
         return Ok(response);
     }
 }

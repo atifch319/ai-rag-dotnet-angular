@@ -8,4 +8,8 @@ public interface IDocumentChunkRepository
         long documentId,
         IReadOnlyList<DocumentChunk> chunks,
         CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<DocumentChunk>> GetByDocumentIdAsync(
+        long documentId,
+        CancellationToken cancellationToken = default);
 }
