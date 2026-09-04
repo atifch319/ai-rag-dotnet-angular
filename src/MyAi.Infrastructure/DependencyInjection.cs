@@ -27,6 +27,7 @@ public static class DependencyInjection
         services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
         services.AddScoped<IDocumentStorageService, LocalDocumentStorageService>();
         services.AddScoped<ITextExtractor, TextExtractor>();
+        services.AddScoped<IDocumentChunkRepository, DocumentChunkRepository>();
 
         return services;
     }

@@ -17,4 +17,6 @@ public class Document
     public string Status { get; set; } = string.Empty;
 
     public string? ExtractedText { get; set; }
+
+    public ICollection<DocumentChunk> Chunks { get; set; } = new List<DocumentChunk>();
 }

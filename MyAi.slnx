@@ -5,4 +5,7 @@
     <Project Path="src/MyAi.Domain/MyAi.Domain.csproj" />
     <Project Path="src/MyAi.Infrastructure/MyAi.Infrastructure.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/MyAi.Application.Tests/MyAi.Application.Tests.csproj" />
+  </Folder>
 </Solution>

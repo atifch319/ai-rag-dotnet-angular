@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using MyAi.Application.Abstractions.Chunking;
 using MyAi.Application.Abstractions.Persistence;
 using MyAi.Application.Abstractions.TextExtraction;
 using MyAi.Application.Common.Exceptions;
@@ -12,13 +13,19 @@ public sealed class ExtractDocumentTextCommandHandler
 {
     private readonly IApplicationDbContext _dbContext;
     private readonly ITextExtractor _textExtractor;
+    private readonly IDocumentChunker _documentChunker;
+    private readonly IDocumentChunkRepository _documentChunkRepository;
 
     public ExtractDocumentTextCommandHandler(
         IApplicationDbContext dbContext,
-        ITextExtractor textExtractor)
+        ITextExtractor textExtractor,
+        IDocumentChunker documentChunker,
+        IDocumentChunkRepository documentChunkRepository)
     {
         _dbContext = dbContext;
         _textExtractor = textExtractor;
+        _documentChunker = documentChunker;
+        _documentChunkRepository = documentChunkRepository;
     }
 
     public async Task<ExtractDocumentTextResponse> Handle(
@@ -48,6 +55,23 @@ public sealed class ExtractDocumentTextCommandHandler
                 throw new ValidationException("Document", "No readable text was found in the document.");
             }
 
+            var chunkContents = _documentChunker.Chunk(extractedText);
+            if (chunkContents.Count == 0)
+            {
+                throw new ValidationException("Document", "No chunks were generated from the extracted text.");
+            }
+
+            var chunks = chunkContents
+                .Select((content, index) => new DocumentChunk
+                {
+                    DocumentId = document.Id,
+                    ChunkIndex = index,
+                    Content = content
+                })
+                .ToList();
+
+            await _documentChunkRepository.ReplaceForDocumentAsync(document.Id, chunks, cancellationToken);
+
             document.ExtractedText = extractedText;
             document.Status = DocumentStatus.Processed;
             await _dbContext.SaveChangesAsync(cancellationToken);
@@ -56,7 +80,8 @@ public sealed class ExtractDocumentTextCommandHandler
                 document.Id,
                 document.FileName,
                 document.Status,
-                extractedText.Length);
+                extractedText.Length,
+                chunks.Count);
         }
         catch (ValidationException)
         {
