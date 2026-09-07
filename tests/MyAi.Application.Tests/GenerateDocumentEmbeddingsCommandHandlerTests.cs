@@ -2,9 +2,10 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using MyAi.Application.Abstractions.Embeddings;
-using MyAi.Application.Abstractions.Persistence;
 using MyAi.Application.Common.Exceptions;
+using MyAi.Application.Configuration;
 using MyAi.Application.Features.Documents.GenerateEmbeddings;
 using MyAi.Domain.Entities;
 using MyAi.Infrastructure;
@@ -46,6 +47,36 @@ public sealed class GenerateDocumentEmbeddingsCommandHandlerTests
             () => handler.Handle(new GenerateDocumentEmbeddingsCommand(1), CancellationToken.None));
 
         Assert.Contains("No chunks", exception.Errors["Document"][0]);
+    }
+
+    [Fact]
+    public async Task Handle_EmptyChunkContent_ThrowsValidationException()
+    {
+        await using var context = CreateContext();
+        context.Documents.Add(new Document
+        {
+            Id = 1,
+            FileName = "doc.txt",
+            ContentType = "text/plain",
+            FilePath = "uploads/documents/doc.txt",
+            Status = DocumentStatus.Processed,
+            UploadedAt = DateTimeOffset.UtcNow
+        });
+        context.DocumentChunks.Add(new DocumentChunk
+        {
+            Id = 1,
+            DocumentId = 1,
+            ChunkIndex = 0,
+            Content = "   "
+        });
+        await context.SaveChangesAsync();
+
+        var handler = CreateHandler(context, new FakeEmbeddingService());
+
+        var exception = await Assert.ThrowsAsync<ValidationException>(
+            () => handler.Handle(new GenerateDocumentEmbeddingsCommand(1), CancellationToken.None));
+
+        Assert.Contains("empty content", exception.Errors["Document"][0]);
     }
 
     [Fact]
@@ -95,6 +126,40 @@ public sealed class GenerateDocumentEmbeddingsCommandHandlerTests
     }
 
     [Fact]
+    public async Task Handle_Rerun_ReplacesEmbeddingsOnExistingChunks()
+    {
+        await using var context = CreateContext();
+        var document = new Document
+        {
+            Id = 1,
+            FileName = "doc.txt",
+            ContentType = "text/plain",
+            FilePath = "uploads/documents/doc.txt",
+            Status = DocumentStatus.Embedded,
+            UploadedAt = DateTimeOffset.UtcNow
+        };
+        context.Documents.Add(document);
+        context.DocumentChunks.Add(new DocumentChunk
+        {
+            Id = 1,
+            DocumentId = 1,
+            ChunkIndex = 0,
+            Content = "First chunk",
+            Embedding = Enumerable.Repeat(0.9f, 1536).ToArray()
+        });
+        await context.SaveChangesAsync();
+
+        var handler = CreateHandler(context, new FakeEmbeddingService());
+        await handler.Handle(new GenerateDocumentEmbeddingsCommand(1), CancellationToken.None);
+
+        var chunks = await context.DocumentChunks.ToListAsync();
+        var chunk = Assert.Single(chunks);
+        Assert.Equal(1, chunk.Id);
+        Assert.Equal(0.1f, chunk.Embedding![0]);
+        Assert.Equal(1536, chunk.Embedding.Length);
+    }
+
+    [Fact]
     public void AddInfrastructure_RegistersEmbeddingService()
     {
         var services = new ServiceCollection();
@@ -123,7 +188,8 @@ public sealed class GenerateDocumentEmbeddingsCommandHandlerTests
         return new GenerateDocumentEmbeddingsCommandHandler(
             context,
             new DocumentChunkRepository(context),
-            embeddingService);
+            embeddingService,
+            Options.Create(new OpenAIOptions()));
     }
 
     private static AppDbContext CreateContext()

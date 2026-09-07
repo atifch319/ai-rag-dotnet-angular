@@ -30,7 +30,7 @@ public sealed class AppDbContextFactory : IDesignTimeDbContextFactory<AppDbConte
                 "Connection string 'DefaultConnection' was not found. Set it in User Secrets or environment variables.");
 
         var optionsBuilder = new DbContextOptionsBuilder<AppDbContext>();
-        optionsBuilder.UseNpgsql(connectionString);
+        optionsBuilder.UseMyAiPostgres(connectionString);
 
         return new AppDbContext(optionsBuilder.Options);
     }

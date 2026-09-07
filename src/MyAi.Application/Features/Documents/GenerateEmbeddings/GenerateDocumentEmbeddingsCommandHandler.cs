@@ -1,8 +1,10 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using MyAi.Application.Abstractions.Embeddings;
 using MyAi.Application.Abstractions.Persistence;
 using MyAi.Application.Common.Exceptions;
+using MyAi.Application.Configuration;
 using MyAi.Domain.Entities;
 
 namespace MyAi.Application.Features.Documents.GenerateEmbeddings;
@@ -13,15 +15,18 @@ public sealed class GenerateDocumentEmbeddingsCommandHandler
     private readonly IApplicationDbContext _dbContext;
     private readonly IDocumentChunkRepository _documentChunkRepository;
     private readonly IEmbeddingService _embeddingService;
+    private readonly OpenAIOptions _openAiOptions;
 
     public GenerateDocumentEmbeddingsCommandHandler(
         IApplicationDbContext dbContext,
         IDocumentChunkRepository documentChunkRepository,
-        IEmbeddingService embeddingService)
+        IEmbeddingService embeddingService,
+        IOptions<OpenAIOptions> openAiOptions)
     {
         _dbContext = dbContext;
         _documentChunkRepository = documentChunkRepository;
         _embeddingService = embeddingService;
+        _openAiOptions = openAiOptions.Value;
     }
 
     public async Task<GenerateDocumentEmbeddingsResponse> Handle(
@@ -62,7 +67,13 @@ public sealed class GenerateDocumentEmbeddingsCommandHandler
 
             for (var index = 0; index < chunks.Count; index++)
             {
-                chunks[index].Embedding = embeddings[index];
+                var embedding = embeddings[index];
+                if (embedding.Length != _openAiOptions.EmbeddingDimensions)
+                {
+                    throw new ValidationException("Embedding", "Embedding generation failed.");
+                }
+
+                chunks[index].Embedding = embedding;
             }
 
             document.Status = DocumentStatus.Embedded;
@@ -85,6 +96,11 @@ public sealed class GenerateDocumentEmbeddingsCommandHandler
             document.Status = DocumentStatus.Failed;
             await _dbContext.SaveChangesAsync(CancellationToken.None);
             throw;
+        }
+        catch (DbUpdateException)
+        {
+            document.Status = DocumentStatus.Failed;
+            throw new ValidationException("Document", "Embedding generation failed.");
         }
         catch (Exception)
         {
