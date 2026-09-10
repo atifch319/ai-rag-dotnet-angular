@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using MyAi.Application.Abstractions.Embeddings;
 using MyAi.Application.Abstractions.Persistence;
+using MyAi.Application.Abstractions.Search;
 using MyAi.Application.Abstractions.Storage;
 using MyAi.Application.Abstractions.TextExtraction;
 using MyAi.Application.Configuration;
@@ -10,6 +11,7 @@ using MyAi.Domain.Interfaces;
 using MyAi.Infrastructure.Embeddings;
 using MyAi.Infrastructure.Persistence;
 using MyAi.Infrastructure.Persistence.Repositories;
+using MyAi.Infrastructure.Search;
 using MyAi.Infrastructure.Storage;
 using MyAi.Infrastructure.TextExtraction;
 
@@ -31,6 +33,7 @@ public static class DependencyInjection
         services.AddScoped<IDocumentStorageService, LocalDocumentStorageService>();
         services.AddScoped<ITextExtractor, TextExtractor>();
         services.AddScoped<IDocumentChunkRepository, DocumentChunkRepository>();
+        services.AddScoped<ISemanticSearchService, PgvectorSemanticSearchService>();
         services.Configure<OpenAIOptions>(configuration.GetSection(OpenAIOptions.SectionName));
         services.AddSingleton<IEmbeddingService, OpenAIEmbeddingService>();
 
