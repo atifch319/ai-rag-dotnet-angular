@@ -12,4 +12,6 @@ public sealed class OpenAIOptions
     /// Output dimensions for text-embedding-3-small. The model default is 1536.
     /// </summary>
     public int EmbeddingDimensions { get; set; } = 1536;
+
+    public string ChatModel { get; set; } = "gpt-4o-mini";
 }
