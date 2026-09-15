@@ -4,9 +4,11 @@ using MediatR;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using MyAi.Application.Abstractions.Chunking;
+using MyAi.Application.Abstractions.Rag;
 using MyAi.Application.Chunking;
 using MyAi.Application.Common.Behaviors;
 using MyAi.Application.Configuration;
+using MyAi.Application.Features.Rag;
 
 namespace MyAi.Application;
 
@@ -18,6 +20,7 @@ public static class DependencyInjection
 
         services.Configure<DocumentChunkingOptions>(configuration.GetSection(DocumentChunkingOptions.SectionName));
         services.AddSingleton<IDocumentChunker, DocumentChunker>();
+        services.AddScoped<IRagService, RagService>();
         services.AddMediatR(mediatR => mediatR.RegisterServicesFromAssembly(assembly));
         services.AddValidatorsFromAssembly(assembly);
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));

@@ -5,6 +5,7 @@ using MyAi.Application.Abstractions.Embeddings;
 using MyAi.Application.Abstractions.Search;
 using MyAi.Application.Common.Exceptions;
 using MyAi.Application.Configuration;
+using MyAi.Application.Features.Rag;
 using MyAi.Application.Features.Rag.AskRag;
 using MyAi.Domain.Entities;
 using MyAi.Infrastructure.Persistence;
@@ -134,11 +135,12 @@ public sealed class AskRagQueryHandlerTests
         IChatCompletionService chatService)
     {
         return new AskRagQueryHandler(
-            embeddingService,
-            searchService,
-            chatService,
-            context,
-            Options.Create(new OpenAIOptions { EmbeddingDimensions = 1536 }));
+            new RagService(
+                embeddingService,
+                searchService,
+                chatService,
+                context,
+                Options.Create(new OpenAIOptions { EmbeddingDimensions = 1536 })));
     }
 
     private static AppDbContext CreateContext()
