@@ -19,6 +19,12 @@ public static class DependencyInjection
         var assembly = Assembly.GetExecutingAssembly();
 
         services.Configure<DocumentChunkingOptions>(configuration.GetSection(DocumentChunkingOptions.SectionName));
+        services.AddOptions<RagOptions>()
+            .Bind(configuration.GetSection(RagOptions.SectionName))
+            .Validate(
+                options => options.MinimumSimilarity is >= 0d and <= 1d,
+                "Rag:MinimumSimilarity must be between 0 and 1.")
+            .ValidateOnStart();
         services.AddSingleton<IDocumentChunker, DocumentChunker>();
         services.AddScoped<IRagService, RagService>();
         services.AddMediatR(mediatR => mediatR.RegisterServicesFromAssembly(assembly));

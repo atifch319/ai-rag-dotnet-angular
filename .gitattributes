@@ -1,1 +1,5 @@
-frontend/my-ai-chat/src/**/*.ts linguist-language=TypeScript
+frontend/my-ai-chat/src/**/*.ts linguist-language=TypeScript linguist-detectable
+
+frontend/my-ai-chat/dist/** linguist-generated
+frontend/my-ai-chat/.angular/** linguist-generated
+frontend/my-ai-chat/node_modules/** linguist-vendored

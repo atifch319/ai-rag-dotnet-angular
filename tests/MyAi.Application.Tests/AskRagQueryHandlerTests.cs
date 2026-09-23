@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using MyAi.Application.Abstractions.Chat;
 using MyAi.Application.Abstractions.Embeddings;
@@ -51,9 +52,37 @@ public sealed class AskRagQueryHandlerTests
         Assert.Equal(3, response.Sources[0].ChunkIndex);
         Assert.Equal("refund-policy.pdf", response.Sources[0].FileName);
         Assert.Equal(0.82, response.Sources[0].Similarity, 2);
+        Assert.Equal("Refunds are processed within 7 business days after approval.", response.Sources[0].Content);
+        Assert.Equal(16, response.Sources[1].ChunkId);
+        Assert.Equal(4, response.Sources[1].ChunkIndex);
+        Assert.Equal("Contact support if the refund is delayed.", response.Sources[1].Content);
         Assert.True(response.Sources[0].Similarity > response.Sources[1].Similarity);
         Assert.Null(typeof(AskRagResponse).GetProperty("Embedding"));
         Assert.Null(typeof(RagSource).GetProperty("Embedding"));
+        Assert.Null(typeof(RagSource).GetProperty("Page"));
+        Assert.Null(typeof(RagSource).GetProperty("PageNumber"));
+    }
+
+    [Fact]
+    public async Task Handle_ValidQuery_PreservesSemanticSearchOrder()
+    {
+        await using var context = CreateContext();
+        await SeedDocumentAsync(context);
+        var handler = CreateHandler(
+            context,
+            new RecordingEmbeddingService(CreateVector(1f, 0f)),
+            new RecordingSearchService(
+            [
+                new SemanticSearchMatch(21, 5, 1, "Highest ranked chunk.", 0.12),
+                new SemanticSearchMatch(22, 5, 8, "Second ranked chunk.", 0.40)
+            ]),
+            new RecordingChatCompletionService("Grounded answer."));
+
+        var response = await handler.Handle(new AskRagQuery("What is the refund policy?", 5), CancellationToken.None);
+
+        Assert.Equal(new long[] { 21, 22 }, response.Sources.Select(source => source.ChunkId).ToArray());
+        Assert.Equal(0.88, response.Sources[0].Similarity, 2);
+        Assert.Equal(0.60, response.Sources[1].Similarity, 2);
     }
 
     [Fact]
@@ -73,7 +102,107 @@ public sealed class AskRagQueryHandlerTests
 
         Assert.Equal(0, chat.CallCount);
         Assert.Empty(response.Sources);
-        Assert.Contains("No relevant information", response.Answer);
+        Assert.Equal("The answer cannot be determined from the provided documents.", response.Answer);
+    }
+
+    [Fact]
+    public async Task Handle_UsesConfiguredMinimumSimilarity_IncludesEqualAndAbove_ExcludesBelow()
+    {
+        await using var context = CreateContext();
+        await SeedDocumentAsync(context);
+        var chat = new RecordingChatCompletionService("Grounded answer.");
+        var handler = CreateHandler(
+            context,
+            new RecordingEmbeddingService(CreateVector(1f, 0f)),
+            new RecordingSearchService(
+            [
+                new SemanticSearchMatch(31, 5, 1, "Above threshold.", 0.20),
+                new SemanticSearchMatch(32, 5, 2, "Equal to threshold.", 0.30),
+                new SemanticSearchMatch(33, 5, 3, "Below threshold.", 0.40)
+            ]),
+            chat,
+            minimumSimilarity: 0.70);
+
+        var response = await handler.Handle(new AskRagQuery("What is semantic search?", 5), CancellationToken.None);
+
+        Assert.Equal(1, chat.CallCount);
+        Assert.Equal(new long[] { 31, 32 }, response.Sources.Select(source => source.ChunkId).ToArray());
+        Assert.Equal(0.80, response.Sources[0].Similarity, 2);
+        Assert.Equal(0.70, response.Sources[1].Similarity, 2);
+        Assert.DoesNotContain(response.Sources, source => source.ChunkId == 33);
+        Assert.Null(typeof(AskRagResponse).GetProperty("Embedding"));
+    }
+
+    [Fact]
+    public async Task Handle_SupportedSemanticSearchQuestion_CallsLlmAndReturnsSources()
+    {
+        await using var context = CreateContext();
+        await SeedDocumentAsync(context, fileName: "RAG_Test_Document_25_Pages.txt");
+        var chat = new RecordingChatCompletionService("Semantic search ranks text by meaning.");
+        var handler = CreateHandler(
+            context,
+            new RecordingEmbeddingService(CreateVector(1f, 0f)),
+            new RecordingSearchService(
+            [
+                new SemanticSearchMatch(41, 5, 9, "Semantic search focuses on meaning.", 0.592),
+                new SemanticSearchMatch(42, 5, 1, "Embeddings represent related ideas nearby.", 0.607),
+                new SemanticSearchMatch(43, 5, 4, "Keyword search matches exact terms.", 0.663),
+                new SemanticSearchMatch(44, 5, 2, "Retrieval uses vector similarity.", 0.666),
+                new SemanticSearchMatch(45, 5, 7, "Relevant chunks ground the answer.", 0.709)
+            ]),
+            chat);
+
+        var response = await handler.Handle(new AskRagQuery("What is semantic search?", 5), CancellationToken.None);
+
+        Assert.Equal(1, chat.CallCount);
+        Assert.Equal(5, response.Sources.Count);
+        Assert.Equal(new long[] { 41, 42, 43, 44, 45 }, response.Sources.Select(source => source.ChunkId).ToArray());
+        Assert.Equal("Semantic search ranks text by meaning.", response.Answer);
+        Assert.All(response.Sources, source => Assert.True(source.Similarity >= 0.25));
+    }
+
+    [Fact]
+    public async Task Handle_UnsupportedCeoQuestion_SkipsLlmAndHidesWeakSources()
+    {
+        await using var context = CreateContext();
+        await SeedDocumentAsync(context);
+        var chat = new RecordingChatCompletionService("should not be used");
+        var handler = CreateHandler(
+            context,
+            new RecordingEmbeddingService(CreateVector(1f, 0f)),
+            new RecordingSearchService(
+            [
+                new SemanticSearchMatch(51, 5, 1, "Unrelated policy text.", 0.829),
+                new SemanticSearchMatch(52, 5, 2, "Unrelated refund text.", 0.846),
+                new SemanticSearchMatch(53, 5, 3, "Unrelated support text.", 0.851),
+                new SemanticSearchMatch(54, 5, 4, "Unrelated upload text.", 0.854),
+                new SemanticSearchMatch(55, 5, 5, "Unrelated chunking text.", 0.857)
+            ]),
+            chat);
+
+        var response = await handler.Handle(
+            new AskRagQuery("What is the CEO's favorite food?", 5),
+            CancellationToken.None);
+
+        Assert.Equal(0, chat.CallCount);
+        Assert.Empty(response.Sources);
+        Assert.Equal("The answer cannot be determined from the provided documents.", response.Answer);
+        Assert.Null(typeof(RagSource).GetProperty("Embedding"));
+    }
+
+    [Fact]
+    public async Task Constructor_InvalidMinimumSimilarity_Throws()
+    {
+        await using var context = CreateContext();
+
+        var exception = Assert.Throws<InvalidOperationException>(() => CreateHandler(
+            context,
+            new RecordingEmbeddingService(CreateVector(1f, 0f)),
+            new RecordingSearchService([]),
+            new RecordingChatCompletionService("unused"),
+            minimumSimilarity: 1.5));
+
+        Assert.Contains("MinimumSimilarity", exception.Message);
     }
 
     [Fact]
@@ -132,7 +261,8 @@ public sealed class AskRagQueryHandlerTests
         AppDbContext context,
         IEmbeddingService embeddingService,
         ISemanticSearchService searchService,
-        IChatCompletionService chatService)
+        IChatCompletionService chatService,
+        double minimumSimilarity = 0.25)
     {
         return new AskRagQueryHandler(
             new RagService(
@@ -140,7 +270,9 @@ public sealed class AskRagQueryHandlerTests
                 searchService,
                 chatService,
                 context,
-                Options.Create(new OpenAIOptions { EmbeddingDimensions = 1536 })));
+                Options.Create(new OpenAIOptions { EmbeddingDimensions = 1536 }),
+                Options.Create(new RagOptions { MinimumSimilarity = minimumSimilarity }),
+                NullLogger<RagService>.Instance));
     }
 
     private static AppDbContext CreateContext()
@@ -152,12 +284,12 @@ public sealed class AskRagQueryHandlerTests
         return new AppDbContext(options);
     }
 
-    private static async Task SeedDocumentAsync(AppDbContext context)
+    private static async Task SeedDocumentAsync(AppDbContext context, string fileName = "refund-policy.pdf")
     {
         context.Documents.Add(new Document
         {
             Id = 5,
-            FileName = "refund-policy.pdf",
+            FileName = fileName,
             ContentType = "application/pdf",
             FilePath = "uploads/documents/refund-policy.pdf",
             Status = DocumentStatus.Embedded,

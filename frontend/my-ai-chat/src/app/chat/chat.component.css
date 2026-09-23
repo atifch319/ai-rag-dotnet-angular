@@ -72,18 +72,48 @@
   font-weight: 600;
 }
 
-.sources ul {
+.sources ol {
   margin: 0;
-  padding-left: 1.1rem;
+  padding: 0;
+  list-style: none;
 }
 
 .sources li {
-  margin-bottom: 0.35rem;
+  margin-bottom: 0.75rem;
+}
+
+.cite {
+  margin-right: 0.35rem;
+  font-weight: 600;
 }
 
 .file {
-  display: block;
   font-weight: 600;
+}
+
+.meta {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.86rem;
+}
+
+.evidence-label {
+  margin: 0.45rem 0 0.2rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #5b6573;
+  text-transform: uppercase;
+}
+
+.evidence {
+  margin: 0;
+  padding: 0.55rem 0.7rem;
+  border-left: 3px solid #c9d8f5;
+  background: #f7f9fc;
+  font-size: 0.9rem;
+  white-space: pre-wrap;
+  max-height: 8.5rem;
+  overflow: auto;
 }
 
 .loading, .error {

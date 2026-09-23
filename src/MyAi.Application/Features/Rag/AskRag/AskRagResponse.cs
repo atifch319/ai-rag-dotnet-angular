@@ -10,4 +10,5 @@ public sealed record RagSource(
     long ChunkId,
     int ChunkIndex,
     string FileName,
-    double Similarity);
+    double Similarity,
+    string Content);

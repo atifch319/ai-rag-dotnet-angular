@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MyAi.Application.Abstractions.Chat;
 using MyAi.Application.Abstractions.Embeddings;
@@ -14,7 +15,7 @@ namespace MyAi.Application.Features.Rag;
 public sealed class RagService : IRagService
 {
     internal const string NoRelevantContextAnswer =
-        "No relevant information was found in the uploaded documents.";
+        "The answer cannot be determined from the provided documents.";
 
     private const string SystemInstructions =
         """
@@ -33,19 +34,30 @@ public sealed class RagService : IRagService
     private readonly IChatCompletionService _chatCompletionService;
     private readonly IApplicationDbContext _dbContext;
     private readonly OpenAIOptions _openAiOptions;
+    private readonly double _minimumSimilarity;
+    private readonly ILogger<RagService> _logger;
 
     public RagService(
         IEmbeddingService embeddingService,
         ISemanticSearchService semanticSearchService,
         IChatCompletionService chatCompletionService,
         IApplicationDbContext dbContext,
-        IOptions<OpenAIOptions> openAiOptions)
+        IOptions<OpenAIOptions> openAiOptions,
+        IOptions<RagOptions> ragOptions,
+        ILogger<RagService> logger)
     {
         _embeddingService = embeddingService;
         _semanticSearchService = semanticSearchService;
         _chatCompletionService = chatCompletionService;
         _dbContext = dbContext;
         _openAiOptions = openAiOptions.Value;
+        _minimumSimilarity = ragOptions.Value.MinimumSimilarity;
+        _logger = logger;
+
+        if (_minimumSimilarity is < 0d or > 1d)
+        {
+            throw new InvalidOperationException("Rag:MinimumSimilarity must be between 0 and 1.");
+        }
     }
 
     public async Task<AskRagResponse> AskAsync(
@@ -57,14 +69,24 @@ public sealed class RagService : IRagService
 
         var queryEmbedding = await GenerateQueryEmbeddingAsync(query, cancellationToken);
         var matches = await SearchAsync(queryEmbedding, topK, cancellationToken);
+        var relevant = matches
+            .Where(match => ToSimilarity(match.CosineDistance) >= _minimumSimilarity)
+            .ToList();
 
-        if (matches.Count == 0)
+        _logger.LogDebug(
+            "RAG retrieval: requestedTopK={RequestedTopK}, candidates={CandidateCount}, remainingAfterThreshold={RemainingCount}, minimumSimilarity={MinimumSimilarity}",
+            topK,
+            matches.Count,
+            relevant.Count,
+            _minimumSimilarity);
+
+        if (relevant.Count == 0)
         {
             return new AskRagResponse(query, NoRelevantContextAnswer, []);
         }
 
-        var fileNames = await LoadFileNamesAsync(matches, cancellationToken);
-        var contextChunks = matches
+        var fileNames = await LoadFileNamesAsync(relevant, cancellationToken);
+        var contextChunks = relevant
             .Select(match => new RagContextChunk(
                 fileNames.GetValueOrDefault(match.DocumentId, "unknown"),
                 match.DocumentId,
@@ -87,14 +109,14 @@ public sealed class RagService : IRagService
 
         var answer = await CompleteAsync(userPrompt, cancellationToken);
 
-        var sources = matches
+        var sources = relevant
             .Select(match => new RagSource(
                 match.DocumentId,
                 match.ChunkId,
                 match.ChunkIndex,
                 fileNames.GetValueOrDefault(match.DocumentId, "unknown"),
-                Similarity: 1d - match.CosineDistance))
-            .OrderByDescending(source => source.Similarity)
+                Similarity: ToSimilarity(match.CosineDistance),
+                match.Content))
             .ToList();
 
         return new AskRagResponse(query, answer, sources);
@@ -127,6 +149,8 @@ public sealed class RagService : IRagService
 
         return queryEmbedding;
     }
+
+    private static double ToSimilarity(double cosineDistance) => 1d - cosineDistance;
 
     private async Task<IReadOnlyList<SemanticSearchMatch>> SearchAsync(
         float[] queryEmbedding,

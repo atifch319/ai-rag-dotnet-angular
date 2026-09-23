@@ -26,7 +26,7 @@ The system:
 - Builds grounded RAG context
 - Uses an OpenAI LLM to generate answers
 - Provides an Angular chat UI
-- Displays source documents, chunks, and similarity scores
+- Displays source documents, chunks, similarity scores, and retrieved chunk evidence
 - Instructs the model to refuse an answer when the information cannot be determined from the indexed documents
 
 A user sends a natural-language message to **`POST /api/chat`**. The Chat API reuses the existing RAG pipeline: embed the question, search stored chunks, build context, and call the OpenAI LLM. The response is a **grounded answer** plus document **sources**.
@@ -158,6 +158,10 @@ Query Embedding
     ↓
 PostgreSQL + pgvector
     ↓
+TopK candidate chunks
+    ↓
+Minimum similarity filter
+    ↓
 Relevant Document Chunks
     ↓
 RAG Context
@@ -176,7 +180,8 @@ Angular UI
 | 3. Chunk | Extracted text is split into overlapping word windows (default **1000** words, **150** overlap) and written to `DocumentChunks` | `Processed` |
 | 4. Embed | Each chunk is sent to OpenAI `text-embedding-3-small`. The resulting **1536**-dimension vector is stored on `DocumentChunks.Embedding` | `Embedded` (or `Failed`) |
 | 5. Semantic search | The question is embedded, then pgvector ranks stored chunks by cosine similarity | Read-only |
-| 6. RAG | Retrieved chunk content is built into context and sent to the existing OpenAI chat model | Read-only |
+| 5a. Relevance filter | Candidates below `Rag:MinimumSimilarity` are dropped before context is built | Read-only |
+| 6. RAG | Remaining chunk content is built into context and sent to the existing OpenAI chat model | Read-only |
 | 7. Chat API | `POST /api/chat` exposes RAG as a chat-oriented request (`message` + `topK`) | Read-only, single-turn |
 | 8. Angular UI | The chat screen calls `POST /api/chat` and renders the answer plus sources | Session-only (not persisted) |
 
@@ -194,9 +199,8 @@ The UI displays:
 
 - User messages
 - Assistant answers
-- Source documents (`fileName`)
-- Chunk information (`documentId`, `chunkIndex`)
-- Similarity scores (shown as a percentage)
+- Numbered source citations (`fileName`, chunk index, similarity)
+- Retrieved chunk text as evidence when the API returns `content`
 
 It also includes:
 
@@ -280,6 +284,7 @@ The response contains:
 - `chunkIndex`
 - `fileName`
 - `similarity` — cosine similarity (`1 - pgvector cosine distance`)
+- `content` — retrieved chunk text used as evidence (not an embedding)
 
 Similarity values vary per query and corpus. The number below is an example only.
 
@@ -293,13 +298,37 @@ Similarity values vary per query and corpus. The number below is an example only
       "chunkId": 39,
       "chunkIndex": 9,
       "fileName": "RAG_Test_Document_25_Pages.txt",
-      "similarity": 0.4076
+      "similarity": 0.4076,
+      "content": "Semantic search focuses on meaning rather than exact keyword matching..."
     }
   ]
 }
 ```
 
-There is no `embedding` field. Raw vectors, OpenAI SDK objects, and API keys are not returned.
+Sources keep semantic-search ranking order (highest-ranked first). There is no `embedding` field and no invented page numbers. Raw vectors, OpenAI SDK objects, and API keys are not returned.
+
+---
+
+## Step 12 — Sources/Citations
+
+The application returns source metadata for retrieved chunks so users can see which indexed document/chunk contributed to the RAG context.
+
+`POST /api/chat` and `POST /api/rag/query` share the same `RagSource` contract:
+
+| Field | Meaning |
+| --- | --- |
+| `documentId` | Indexed document |
+| `chunkId` | Retrieved chunk row |
+| `chunkIndex` | Chunk position in that document |
+| `fileName` | Original file name |
+| `similarity` | Backend cosine similarity (`1 - distance`) |
+| `content` | Retrieved chunk text shown as evidence |
+
+`DocumentChunk` does not store page numbers, so the API does not invent them.
+
+The Angular chat UI renders numbered citations and an evidence excerpt under each source. Citations show which chunks were retrieved for context. They do **not** mathematically prove that every sentence in the answer is correct.
+
+The unsupported-answer behavior is unchanged: if the retrieved documents do not contain the information, the system still reports that the answer cannot be determined from the provided documents.
 
 ---
 
@@ -344,17 +373,50 @@ System instructions tell the model:
 - Do not invent facts that are not present in the context
 - If the context does not contain enough information, state that the answer cannot be determined from the provided documents
 
-When no relevant chunks are retrieved, the API returns:
-
-```text
-No relevant information was found in the uploaded documents.
-```
-
-When chunks are retrieved but they do not contain the answer, the model is instructed to respond that:
+When no chunks pass the minimum similarity threshold (or none are retrieved), the LLM is not called and the API returns:
 
 ```text
 The answer cannot be determined from the provided documents.
 ```
+
+`sources` is empty in that case, so the Angular Sources section stays hidden.
+
+When some chunks pass the threshold but still do not contain the answer, the model is instructed to respond that the answer cannot be determined from the provided documents.
+
+### Retrieval Relevance Threshold
+
+Semantic search first retrieves **TopK candidate** chunks using the existing cosine similarity (`1 - pgvector cosine distance`). Higher similarity means closer to the question.
+
+A configurable minimum similarity then filters weak matches **after** search and **before** RAG context construction:
+
+```text
+TopK candidates
+    ↓
+Rag:MinimumSimilarity
+    ↓
+Only sufficiently relevant chunks
+    ↓
+RAG context
+    ↓
+LLM
+```
+
+- Only chunks with `similarity >= Rag:MinimumSimilarity` are passed to the LLM or returned as citations.
+- If no chunks pass, the LLM is not called, sources are empty, and the grounded fallback answer is returned.
+- The initial value is **`0.25`**. It sits between this corpus’s supported “semantic search” matches (about 29–41%) and unsupported “CEO favorite food” matches (about 14–17%).
+- This is a **tunable starting point** for the current embedding model, chunking strategy, and documents. It is not a universal relevance score and does not guarantee hallucination prevention.
+
+Configure it in `src/MyAi.Api/appsettings.json`:
+
+```json
+{
+  "Rag": {
+    "MinimumSimilarity": 0.25
+  }
+}
+```
+
+The value must be between **0** and **1**. `POST /api/chat` and `POST /api/rag/query` share this filter through `IRagService`. `POST /api/search/semantic` still returns unfiltered TopK candidates.
 
 Retrieved document text is treated as **untrusted reference material**, not as system instructions.
 
@@ -416,6 +478,9 @@ Relevant settings (non-secret defaults in `appsettings.json`):
   "DocumentChunking": {
     "ChunkSize": 1000,
     "ChunkOverlap": 150
+  },
+  "Rag": {
+    "MinimumSimilarity": 0.25
   },
   "OpenAI": {
     "EmbeddingModel": "text-embedding-3-small",
@@ -483,12 +548,12 @@ npx ng build
 
 ## Testing
 
-Verified in this workspace during Step 11:
+Verified in this workspace during Step 12.1:
 
 | Check | Result |
 | --- | --- |
-| `dotnet test tests/MyAi.Application.Tests/MyAi.Application.Tests.csproj` | **69 passed**, 0 failed |
-| `npx ng test --watch=false --browsers=ChromeHeadless` (in `frontend/my-ai-chat`) | **7 passed** |
+| `dotnet test tests/MyAi.Application.Tests/MyAi.Application.Tests.csproj` | **77 passed**, 0 failed |
+| `npx ng test --watch=false --browsers=ChromeHeadless` (in `frontend/my-ai-chat`) | **9 passed** |
 | `npx ng build` | succeeded |
 
 ```powershell
@@ -557,6 +622,8 @@ npx ng build
 | 9 | RAG Pipeline | Complete |
 | 10 | Chat API | Complete |
 | 11 | Angular Chat UI | Complete |
+| 12 | Sources/Citations | Complete |
+| 12.1 | Retrieval Relevance Threshold | Complete |
 
 ---
 
@@ -567,9 +634,9 @@ These items are **not implemented**.
 - Document structure / fidelity validation
 - Topic / heading-aware chunking
 - Table-aware extraction
-- Retrieval similarity threshold
+- Adaptive or corpus-learned retrieval thresholds
 - Reranking
-- Stronger answer / source validation
+- Stronger answer / source validation (citation verification beyond retrieved-chunk metadata)
 - OCR for scanned PDFs
 - Authentication
 - Conversation history

@@ -9,6 +9,7 @@ export interface ChatSource {
   chunkIndex: number;
   fileName: string;
   similarity: number;
+  content?: string;
 }
 
 export interface ChatResponse {

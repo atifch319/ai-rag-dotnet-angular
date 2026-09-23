@@ -29,7 +29,8 @@ describe('ChatService', () => {
           chunkId: 39,
           chunkIndex: 9,
           fileName: 'RAG_Test_Document_25_Pages.txt',
-          similarity: 0.4076
+          similarity: 0.4076,
+          content: 'Semantic search focuses on meaning rather than exact keyword matching.'
         }
       ]
     };
@@ -39,6 +40,8 @@ describe('ChatService', () => {
       expect(body.sources.length).toBe(1);
       expect(body.sources[0].chunkId).toBe(39);
       expect(body.sources[0].similarity).toBe(0.4076);
+      expect(body.sources[0].content).toContain('exact keyword matching');
+      expect(body.sources[0]).not.toEqual(jasmine.objectContaining({ embedding: jasmine.anything() }));
     });
 
     const req = http.expectOne(`${environment.apiBaseUrl}/api/chat`);

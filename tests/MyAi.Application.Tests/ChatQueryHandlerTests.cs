@@ -14,7 +14,13 @@ public sealed class ChatQueryHandlerTests
             "What is semantic search?",
             "Semantic search focuses on meaning rather than exact keyword matches.",
             [
-                new RagSource(5, 39, 9, "RAG_Test_Document_25_Pages.txt", 0.4076)
+                new RagSource(
+                    5,
+                    39,
+                    9,
+                    "RAG_Test_Document_25_Pages.txt",
+                    0.4076,
+                    "Semantic search focuses on meaning rather than exact keyword matches.")
             ]));
         var handler = new ChatQueryHandler(rag);
 
@@ -31,7 +37,9 @@ public sealed class ChatQueryHandlerTests
         Assert.Equal(9, source.ChunkIndex);
         Assert.Equal("RAG_Test_Document_25_Pages.txt", source.FileName);
         Assert.Equal(0.4076, source.Similarity);
+        Assert.Equal("Semantic search focuses on meaning rather than exact keyword matches.", source.Content);
         Assert.Null(typeof(ChatResponse).GetProperty("Embedding"));
+        Assert.Null(typeof(RagSource).GetProperty("Embedding"));
     }
 
     [Fact]
@@ -39,7 +47,7 @@ public sealed class ChatQueryHandlerTests
     {
         var rag = new RecordingRagService(new AskRagResponse(
             "What is the CEO's favorite food?",
-            "No relevant information was found in the uploaded documents.",
+            "The answer cannot be determined from the provided documents.",
             []));
         var handler = new ChatQueryHandler(rag);
 
@@ -49,7 +57,8 @@ public sealed class ChatQueryHandlerTests
 
         Assert.Equal(1, rag.CallCount);
         Assert.Empty(response.Sources);
-        Assert.Contains("No relevant information", response.Answer);
+        Assert.Equal("The answer cannot be determined from the provided documents.", response.Answer);
+        Assert.Null(typeof(ChatResponse).GetProperty("Embedding"));
     }
 
     [Fact]

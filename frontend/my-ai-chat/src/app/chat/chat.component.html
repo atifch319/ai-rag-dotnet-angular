@@ -23,17 +23,21 @@
         @if (turn.role === 'assistant' && turn.sources?.length) {
           <div class="sources">
             <p class="sources-title">Sources</p>
-            <ul>
-              @for (source of turn.sources; track source.chunkId) {
+            <ol>
+              @for (source of turn.sources; track source.chunkId; let i = $index) {
                 <li>
+                  <span class="cite">[{{ i + 1 }}]</span>
                   <span class="file">{{ source.fileName }}</span>
                   <span class="meta">
-                    Doc {{ source.documentId }} · Chunk {{ source.chunkIndex }} ·
-                    {{ similarityPercent(source.similarity) }}
+                    Chunk {{ source.chunkIndex }} · Similarity {{ similarityPercent(source.similarity) }}
                   </span>
+                  @if (source.content) {
+                    <p class="evidence-label">Evidence</p>
+                    <blockquote class="evidence">{{ source.content }}</blockquote>
+                  }
                 </li>
               }
-            </ul>
+            </ol>
           </div>
         }
       </article>

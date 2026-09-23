@@ -26,7 +26,6 @@ export class ChatComponent {
   }
 
   send(): void {
-    debugger
     const text = this.message.trim();
     if (!text || this.loading) {
       return;
@@ -39,7 +38,6 @@ export class ChatComponent {
 
     this.chatService.send({ message: text, topK: this.topK }).subscribe({
       next: (response) => {
-        debugger
         this.turns.push({
           role: 'assistant',
           text: response.answer,
@@ -48,7 +46,6 @@ export class ChatComponent {
         this.loading = false;
       },
       error: (err: HttpErrorResponse) => {
-        debugger
         this.error = this.readError(err);
         this.loading = false;
       }
